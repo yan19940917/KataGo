@@ -1,0 +1,51 @@
+	name: Build patched KataGo (custom)
+	on:
+	  workflow_dispatch:
+	jobs:
+	  build:
+	    runs-on: windows-latest
+	    steps:
+	      - name: Checkout
+	        uses: actions/checkout@v4
+	        with:
+	          submodules: recursive
+	      - name: Install CUDA 12.8.0
+	        uses: Jimver/cuda-toolkit@v0.2.21
+	        with:
+	          cuda: '12.8.0'
+	          method: 'network'
+	      - name: Install cuDNN 9.8.0
+	        shell: pwsh
+	        run: |
+	          $cudaRoot = $env:CUDA_PATH
+	          if(-not $cudaRoot) { $cudaRoot = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" }
+	          if(Test-Path "$cudaRoot\include\cudnn_version.h") {
+	            Write-Host "cuDNN already present"
+	          } else {
+	            $url = $null
+	            try {
+	              $j = Invoke-RestMethod "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.8.0.json"
+	              $rel = $j.cudnn.'windows-x86_64'.'cuda12'.relative_path
+	              $url = "https://developer.download.nvidia.com/compute/cudnn/redist/$rel"
+	            } catch { Write-Host "JSON index failed, trying fixed URL" }
+	            if(-not $url) {
+	              $url = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip"
+	            }
+	            Invoke-WebRequest $url -OutFile cudnn.zip
+	            Expand-Archive cudnn.zip -DestinationPath cudnn_tmp
+	            $dir = (Get-ChildItem cudnn_tmp -Directory | Select-Object -First 1).FullName
+	            Copy-Item "$dir\include\*" "$cudaRoot\include\" -Force
+	            Copy-Item "$dir\lib\x64\*" "$cudaRoot\lib\x64\" -Force
+	          }
+	      - name: Build
+	        shell: cmd
+	        run: |
+	          cd cpp
+	          cmake . -G "Visual Studio 17 2022" -A x64 -DBUILD_BACKENDS=cuda -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120"
+	          cmake --build . --config Release --parallel
+	      - name: Upload katago.exe
+	        uses: actions/upload-artifact@v4
+	        with:
+	          name: katago-patched-win64
+	          path: cpp/**/katago.exe
+	          if-no-files-found: error

@@ -1,28 +1,34 @@
-	name: Build patched KataGo (custom)
-	on:
-	  workflow_dispatch:
-	jobs:
-	  build:
-	    runs-on: windows-latest
-	    steps:
-	      - name: Checkout
-	        uses: actions/checkout@v4
-	        with:
-	          submodules: recursive
-	      - name: Install CUDA
-	        uses: Jimver/cuda-toolkit@v0.2.21
-	        with:
-	          cuda: '12.8.0'
-	          method: 'network'
-	      - name: Install cuDNN
-	        shell: pwsh
-	        run: $u = 'https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip'; Invoke-WebRequest $u -OutFile cudnn.zip; Expand-Archive cudnn.zip -DestinationPath cudnn_tmp; $d = (Get-ChildItem cudnn_tmp -Directory | Select-Object -First 1).FullName; Copy-Item "$d\include\*" "$env:CUDA_PATH\include\" -Force; Copy-Item "$d\lib\x64\*" "$env:CUDA_PATH\lib\x64\" -Force
-	      - name: Build
-	        shell: cmd
-	        run: cd cpp && cmake . -G "Visual Studio 17 2022" -A x64 -DBUILD_BACKENDS=cuda -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" && cmake --build . --config Release --parallel
-	      - name: Upload
-	        uses: actions/upload-artifact@v4
-	        with:
-	          name: katago-patched-win64
-	          path: cpp/**/katago.exe
-	          if-no-files-found: error
+name: Build patched KataGo (custom)
+ 
+on:
+  workflow_dispatch:
+ 
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+ 
+      - name: Install CUDA
+        uses: Jimver/cuda-toolkit@v0.2.21
+        with:
+          cuda: '12.8.0'
+          method: 'network'
+ 
+      - name: Install cuDNN
+        shell: pwsh
+        run: $u = 'https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip'; Invoke-WebRequest $u -OutFile cudnn.zip; Expand-Archive cudnn.zip -DestinationPath cudnn_tmp; $d = (Get-ChildItem cudnn_tmp -Directory | Select-Object -First 1).FullName; Copy-Item "$d\include\*" "$env:CUDA_PATH\include\" -Force; Copy-Item "$d\lib\x64\*" "$env:CUDA_PATH\lib\x64\" -Force
+ 
+      - name: Build
+        shell: cmd
+        run: cd cpp && cmake . -G "Visual Studio 17 2022" -A x64 -DBUILD_BACKENDS=cuda -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" && cmake --build . --config Release --parallel
+ 
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: katago-patched-win64
+          path: cpp/**/katago.exe
+          if-no-files-found: error

@@ -22,13 +22,23 @@ jobs:
         shell: pwsh
         run: $u = 'https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip'; Invoke-WebRequest $u -OutFile cudnn.zip; Expand-Archive cudnn.zip -DestinationPath cudnn_tmp; $d = (Get-ChildItem cudnn_tmp -Directory | Select-Object -First 1).FullName; Copy-Item "$d\include\*" "$env:CUDA_PATH\include\" -Force; Copy-Item "$d\lib\x64\*" "$env:CUDA_PATH\lib\x64\" -Force
  
+      - name: Install zlib
+        shell: pwsh
+        run: vcpkg install zlib:x64-windows-static-md
+ 
       - name: Build
         shell: cmd
-        run: cd cpp && cmake . -G "Visual Studio 17 2022" -A x64 -DBUILD_BACKENDS=cuda -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" && cmake --build . --config Release --parallel
+        run: cd cpp && cmake . -G "Visual Studio 17 2022" -A x64 -DUSE_BACKEND=CUDA -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler -DZLIB_INCLUDE_DIR=%VCPKG_INSTALLATION_ROOT%/installed/x64-windows-static-md/include -DZLIB_LIBRARY=%VCPKG_INSTALLATION_ROOT%/installed/x64-windows-static-md/lib/zlib.lib && cmake --build . --config Release --parallel
+ 
+      - name: Collect DLLs
+        shell: pwsh
+        run: $exe = (Get-ChildItem cpp -Recurse -Filter katago.exe | Select-Object -First 1).FullName; Copy-Item "$env:CUDA_PATH\lib\x64\cudnn64_9.dll" (Split-Path $exe) -Force
  
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: katago-patched-win64
-          path: cpp/**/katago.exe
+          path: |
+            cpp/**/katago.exe
+            cpp/**/cudnn64_9.dll
           if-no-files-found: error

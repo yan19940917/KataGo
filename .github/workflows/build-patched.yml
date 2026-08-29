@@ -1,4 +1,4 @@
-name: Build patched KataGo (custom)
+	name: Build patched KataGo (custom)
  
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
  
       - name: Collect DLLs
         shell: pwsh
-        run: $exe = (Get-ChildItem cpp -Recurse -Filter katago.exe | Select-Object -First 1).FullName; Copy-Item "$env:CUDA_PATH\lib\x64\cudnn64_9.dll" (Split-Path $exe) -Force
+        run: $exe = (Get-ChildItem cpp -Recurse -Filter katago.exe | Select-Object -First 1).FullName; $dst = Split-Path $exe; Copy-Item cudnn_tmp\*\bin\*.dll $dst -Force; Copy-Item "$env:CUDA_PATH\bin\cublas64_12.dll", "$env:CUDA_PATH\bin\cublasLt64_12.dll", "$env:CUDA_PATH\bin\cudart64_12.dll" $dst -Force
  
       - name: Upload
         uses: actions/upload-artifact@v4
@@ -40,5 +40,5 @@ jobs:
           name: katago-patched-win64
           path: |
             cpp/**/katago.exe
-            cpp/**/cudnn64_9.dll
+            cpp/**/*.dll
           if-no-files-found: error

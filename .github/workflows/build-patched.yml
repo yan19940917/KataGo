@@ -1,4 +1,4 @@
-	name: Build patched KataGo (custom)
+name: Build patched KataGo (custom)
  
 on:
   workflow_dispatch:

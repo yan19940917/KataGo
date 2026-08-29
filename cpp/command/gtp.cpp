@@ -232,14 +232,24 @@ static void updateDynamicPDAHelper(
       //Power of 2 to avoid any rounding issues.
       const double increment = 0.125;
 
-      //Hard cap of 2.75 in this parameter, since more extreme values start to reach into values without good training.
-      //Scale mildly with board size - small board a given point lead counts as "more".
-      double pdaCap = std::min(
-        2.75,
-        dynamicPlayoutDoublingAdvantageCapPerOppLead *
-        (initialAdvantageInPoints - pdaScalingStartPoints) * boardSizeScaling
-      );
+       //PATCH BEGIN: per-handicap PDA table replaces the old hard cap of 2.75.
+      //Auto-detects handicap stones; 2:3.0 3:5.5 4:8.0 5:10.0 6:10.5 7:11.0 8:12.0 9+:12.0, even game: 0.
+      //Set dynamicPlayoutDoublingAdvantageCapPerOppLead = 0 in config to disable dynamic PDA entirely.
+      double pdaCap;
+      {
+        BoardHistory histCopy = hist;
+        histCopy.setAssumeMultipleStartingBlackMovesAreHandicap(true);
+        const int handicapStones = histCopy.computeNumHandicapStones();
+        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 10.5, 11.0, 12.0}; // index = stones-2
+        if(handicapStones <= 1)
+          pdaCap = 0.0;
+        else if(handicapStones >= 9)
+          pdaCap = 12.0;
+        else
+          pdaCap = handicapPDATable[handicapStones - 2];
+      }
       pdaCap = round(pdaCap / increment) * increment;
+      //PATCH END
 
       //No history, or literally no white stones on board? Then this is a new game or a newly set position
       if(recentWinLossValues.size() <= 0 || noWhiteStonesOnBoard(board)) {
@@ -251,12 +261,11 @@ static void updateDynamicPDAHelper(
         //Convert to perspective of disadvantagedPla
         if(disadvantagedPla == P_BLACK)
           winLossValue = -winLossValue;
-
-        //Keep winLossValue between 5% and 25%, subject to available caps.
-        if(winLossValue < -0.9)
-          desiredDynamicPDAForDisadvantagedPla = desiredDynamicPDAForDisadvantagedPla + 0.125;
-        else if(winLossValue > -0.5)
-          desiredDynamicPDAForDisadvantagedPla = desiredDynamicPDAForDisadvantagedPla - 0.125;
+ 	        //PATCH: fixed per-handicap PDA - no winrate auto-adjust (keeps table value all game long).
+        //To restore stock auto-balancing, uncomment the two lines below.
+        //if(winLossValue < -0.9) desiredDynamicPDAForDisadvantagedPla += 0.125;
+        //else if(winLossValue > -0.5) desiredDynamicPDAForDisadvantagedPla -= 0.125;
+        (void)winLossValue;
 
         desiredDynamicPDAForDisadvantagedPla = std::max(desiredDynamicPDAForDisadvantagedPla, 0.0);
         desiredDynamicPDAForDisadvantagedPla = std::min(desiredDynamicPDAForDisadvantagedPla, pdaCap);

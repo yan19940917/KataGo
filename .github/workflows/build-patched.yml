@@ -1,4 +1,4 @@
-name: Build patched KataGo (custom)
+	name: Build patched KataGo (custom)
  
 on:
   workflow_dispatch:
@@ -30,15 +30,9 @@ jobs:
         shell: cmd
         run: cd cpp && cmake . -G "Visual Studio 17 2022" -A x64 -DUSE_BACKEND=CUDA -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler -DZLIB_INCLUDE_DIR=%GITHUB_WORKSPACE%/zlib -DZLIB_LIBRARY=%GITHUB_WORKSPACE%/zlib/Release/zlibstatic.lib && cmake --build . --config Release --parallel
  
-      - name: Collect DLLs
-        shell: pwsh
-        run: $exe = (Get-ChildItem cpp -Recurse -Filter katago.exe | Select-Object -First 1).FullName; $dst = Split-Path $exe; Copy-Item cudnn_tmp\*\bin\*.dll $dst -Force; Copy-Item "$env:CUDA_PATH\bin\cublas64_12.dll", "$env:CUDA_PATH\bin\cublasLt64_12.dll", "$env:CUDA_PATH\bin\cudart64_12.dll" $dst -Force
- 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: katago-patched-win64
-          path: |
-            cpp/**/katago.exe
-            cpp/**/*.dll
+          path: cpp/**/katago.exe
           if-no-files-found: error

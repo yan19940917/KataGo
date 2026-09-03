@@ -1610,10 +1610,17 @@ struct GTPEngine {
     const BoardHistory oldHist = bot->getRootHist();
  
     //3) 用无偏参数同步跑一次小搜索，结果留在 bot 的搜索树里
-    {
+   {
       TimeControls noTc;                  // 无限时间，靠 maxVisits 停
-      bool allowResignation = false;
-      (void)bot->genMove(pla, noTc, 1.0, allowResignation);
+      int expectedSearchId = (genmoveExpectedId.load() + 1) & 0x3FFFFFFF;
+      genmoveExpectedId.store(expectedSearchId);
+      auto onMove = [](Loc moveLoc, int searchId, Search* search) {
+        (void)moveLoc;
+        (void)searchId;
+        (void)search;
+      };
+      bot->genMoveAsync(pla, expectedSearchId, noTc, 1.0, onMove);
+      bot->waitForSearchToEnd();
     }
  
     //4) 读探针根值（KataGo 上报的本来就是白方视角）

@@ -1201,16 +1201,8 @@ struct GTPEngine {
         tc.timeLeftInPeriod = std::max(0.0, tc.timeLeftInPeriod - probeSeconds);
     }
     //=============== PATCH END ===============
-cpp
 
-复制代码
-第二处：在 PlayUtils::getSearchFactor(...) 那行之后、lastSearchFactor = searchFactor; 之前插入：
-
-    //PATCH: PDA 保护触发时，本手搜索量加倍
-    if(pdaProtectTriggered)
-      searchFactor *= pdaProtectSearchMultiplier;
-    
-    {
+   {
       double avoidRepeatedPatternUtility = normalAvoidRepeatedPatternUtility;
       if(!args.analyzing) {
         double initialOppAdvantage = initialBlackAdvantage(bot->getRootHist()) * (pla == P_WHITE ? 1 : -1);

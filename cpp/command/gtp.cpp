@@ -1577,13 +1577,13 @@ struct GTPEngine {
     double evenScoreStdev = 0.0; // 无偏局面波动度（目）
   };
  
-  PdaProtectEval computePdaProtectEval(Player pla, int64_t numVisits) {
+ PdaProtectEval computePdaProtectEval(Player pla, int64_t numVisits) {
     PdaProtectEval ev;
     if(bot == NULL || nnEval == NULL)
       return ev;
     bot->stopAndWait();
  
-    //1) 无偏参数：PDA=0、关 human SL/反镜像/模式规避（与 final_score 的口径一致）
+    //1) 无偏参数：PDA=0、关 human SL/反镜像/模式规避，并把搜索量限制为探针预算
     {
       SearchParams tmpParams = genmoveParams;
       tmpParams.playoutDoublingAdvantage = 0.0;
@@ -1598,6 +1598,9 @@ struct GTPEngine {
       tmpParams.humanSLOppExploreProbWeightless = 0.0;
       tmpParams.antiMirror = false;
       tmpParams.avoidRepeatedPatternUtility = 0;
+      tmpParams.maxVisits = numVisits;                 // 探针预算
+      tmpParams.maxPlayouts = ((int64_t)1) << 50;
+      tmpParams.maxTime = 1.0e20;
       bot->setParams(tmpParams);
     }
  
@@ -1605,11 +1608,13 @@ struct GTPEngine {
     const Player oldPla = bot->getRootPla();
     const Board oldBoard = bot->getRootBoard();
     const BoardHistory oldHist = bot->getRootHist();
-    Board board = bot->getRootBoard();
-    BoardHistory hist = bot->getRootHist();
  
-    //3) 在当前位置跑 PDA=0 探针搜索
-    (void)PlayUtils::computeLead(bot->getSearchStopAndWait(),NULL,board,hist,pla,numVisits,OtherGameProperties());
+    //3) 用无偏参数同步跑一次小搜索，结果留在 bot 的搜索树里
+    {
+      TimeControls noTc;                  // 无限时间，靠 maxVisits 停
+      bool allowResignation = false;
+      (void)bot->genMove(pla, noTc, 1.0, allowResignation);
+    }
  
     //4) 读探针根值（KataGo 上报的本来就是白方视角）
     try {

@@ -383,6 +383,14 @@ struct GTPEngine {
   double delayMoveScale;
   double delayMoveMax;
 
+	  //=============== PATCH: PDA 波动保护配置 ===============
+  bool pdaProtectEnabled = false;           // 总开关
+  double pdaProtectStdevThreshold = 20.0;   // EvenScoreStdev 触发阈值（目）
+  double pdaProtectPdaCap = 5.0;            // 触发后白棋 PDA 上限：min(原PDA, 此值)
+  double pdaProtectSearchMultiplier = 2.0;  // 触发后主搜索量倍数
+  int64_t pdaProtectProbeVisits = 300;      // PDA=0 无偏探针的搜索量
+  bool pdaProtectPrint = true;              // 是否打印 Even* 值
+
   Player perspective;
 
   Rand gtpRand;
@@ -1142,6 +1150,66 @@ struct GTPEngine {
       paramsToUse.playoutDoublingAdvantage = desiredDynamicPDA;
     }
 
+        //=============== PATCH BEGIN: PDA 波动保护 ===============
+    //白棋每次落子前先跑 PDA=0 无偏探针并打印 Even* 值；
+    //若 EvenScoreStdev >= 阈值：本手白棋 PDA 降为 min(原PDA, cap)，且搜索量加倍。
+    bool pdaProtectTriggered = false;
+    if(pdaProtectEnabled && pla == P_WHITE) {
+      ClockTimer probeTimer;
+      PdaProtectEval ev = computePdaProtectEval(pla, pdaProtectProbeVisits);
+ 
+      if(pdaProtectPrint) {
+        cerr << "PdaProtect:"
+             << " EvenWinrate " << Global::strprintf("%.4f", ev.evenWinrate)
+             << " EvenScoreLead " << Global::strprintf("%.2f", ev.evenScoreLead)
+             << " EvenScoreStdev " << Global::strprintf("%.2f", ev.evenScoreStdev)
+             << (ev.ok ? "" : " (probe failed)")
+             << endl;
+      }
+ 
+      if(ev.ok && ev.evenScoreStdev >= pdaProtectStdevThreshold) {
+        //折算白棋当前有效 PDA（兼容 playoutDoublingAdvantagePla 的三种取值）
+        double effPdaWhite =
+          (paramsToUse.playoutDoublingAdvantagePla == P_WHITE) ? paramsToUse.playoutDoublingAdvantage :
+          (paramsToUse.playoutDoublingAdvantagePla == P_BLACK) ? -paramsToUse.playoutDoublingAdvantage :
+          paramsToUse.playoutDoublingAdvantage; //C_EMPTY：应用给行棋方（这里是白）
+        double cappedPda = effPdaWhite;
+        if(effPdaWhite > pdaProtectPdaCap)
+          cappedPda = pdaProtectPdaCap;
+ 
+        if(paramsToUse.playoutDoublingAdvantagePla == P_BLACK)
+          paramsToUse.playoutDoublingAdvantage = -cappedPda;
+        else
+          paramsToUse.playoutDoublingAdvantage = cappedPda;
+ 
+        pdaProtectTriggered = true;
+        if(pdaProtectPrint) {
+          cerr << "PdaProtect: TRIGGERED EvenScoreStdev " << Global::strprintf("%.2f", ev.evenScoreStdev)
+               << " >= " << Global::strprintf("%.2f", pdaProtectStdevThreshold)
+               << " -> PDA " << Global::strprintf("%.3f", effPdaWhite)
+               << " -> " << Global::strprintf("%.3f", cappedPda)
+               << ", search x" << Global::strprintf("%.2f", pdaProtectSearchMultiplier)
+               << endl;
+        }
+      }
+ 
+      //时间制下把探针耗时从本手预算里扣除，避免整手超时（仅对有限计时生效）
+      double probeSeconds = probeTimer.getSeconds();
+      if(tc.mainTimeLeft > 0.0 && tc.mainTimeLeft < 1.0e15)
+        tc.mainTimeLeft = std::max(0.0, tc.mainTimeLeft - probeSeconds);
+      if(tc.inOvertime && tc.timeLeftInPeriod > 0.0 && tc.timeLeftInPeriod < 1.0e15)
+        tc.timeLeftInPeriod = std::max(0.0, tc.timeLeftInPeriod - probeSeconds);
+    }
+    //=============== PATCH END ===============
+cpp
+
+复制代码
+第二处：在 PlayUtils::getSearchFactor(...) 那行之后、lastSearchFactor = searchFactor; 之前插入：
+
+    //PATCH: PDA 保护触发时，本手搜索量加倍
+    if(pdaProtectTriggered)
+      searchFactor *= pdaProtectSearchMultiplier;
+    
     {
       double avoidRepeatedPatternUtility = normalAvoidRepeatedPatternUtility;
       if(!args.analyzing) {
@@ -1158,6 +1226,9 @@ struct GTPEngine {
 
     //Play faster when winning
     double searchFactor = PlayUtils::getSearchFactor(gargs.searchFactorWhenWinningThreshold,gargs.searchFactorWhenWinning,paramsToUse,recentWinLossValues,pla);
+        //PATCH: PDA 保护触发时，本手搜索量加倍
+    if(pdaProtectTriggered)
+      searchFactor *= pdaProtectSearchMultiplier;
     lastSearchFactor = searchFactor;
 
     bot->setAvoidMoveUntilByLoc(args.avoidMoveUntilByLocBlack,args.avoidMoveUntilByLocWhite);
@@ -1502,6 +1573,69 @@ struct GTPEngine {
     bot->setPosition(oldPla,oldBoard,oldHist);
     bot->setParams(genmoveParams);
     isGenmoveParams = true;
+  }
+
+  //=============== PATCH: PDA 波动保护探针 ===============
+  //跑一份 PDA=0 的小预算无偏评估，返回 EvenWinrate/EvenScoreLead/EvenScoreStdev。
+  //实现照抄 computeAnticipatedWinnerAndScore 的"临时改参数->搜->恢复"模式。
+  struct PdaProtectEval {
+    bool ok = false;
+    double evenWinrate = 0.5;    // 白方胜率
+    double evenScoreLead = 0.0;  // 白方领先（目）
+    double evenScoreStdev = 0.0; // 无偏局面波动度（目）
+  };
+ 
+  PdaProtectEval computePdaProtectEval(Player pla, int64_t numVisits) {
+    PdaProtectEval ev;
+    if(bot == NULL || nnEval == NULL)
+      return ev;
+    bot->stopAndWait();
+ 
+    //1) 无偏参数：PDA=0、关 human SL/反镜像/模式规避（与 final_score 的口径一致）
+    {
+      SearchParams tmpParams = genmoveParams;
+      tmpParams.playoutDoublingAdvantage = 0.0;
+      tmpParams.playoutDoublingAdvantagePla = C_EMPTY;
+      tmpParams.conservativePass = true;
+      tmpParams.humanSLChosenMoveProp = 0.0;
+      tmpParams.humanSLRootExploreProbWeightful = 0.0;
+      tmpParams.humanSLRootExploreProbWeightless = 0.0;
+      tmpParams.humanSLPlaExploreProbWeightful = 0.0;
+      tmpParams.humanSLPlaExploreProbWeightless = 0.0;
+      tmpParams.humanSLOppExploreProbWeightful = 0.0;
+      tmpParams.humanSLOppExploreProbWeightless = 0.0;
+      tmpParams.antiMirror = false;
+      tmpParams.avoidRepeatedPatternUtility = 0;
+      bot->setParams(tmpParams);
+    }
+ 
+    //2) 保存 bot 状态
+    const Player oldPla = bot->getRootPla();
+    const Board oldBoard = bot->getRootBoard();
+    const BoardHistory oldHist = bot->getRootHist();
+    Board board = bot->getRootBoard();
+    BoardHistory hist = bot->getRootHist();
+ 
+    //3) 在当前位置跑 PDA=0 探针搜索
+    (void)PlayUtils::computeLead(bot->getSearchStopAndWait(),NULL,board,hist,pla,numVisits,OtherGameProperties());
+ 
+    //4) 读探针根值（KataGo 上报的本来就是白方视角）
+    try {
+      ReportedSearchValues values = bot->getSearchStopAndWait()->getRootValuesRequireSuccess();
+      ev.evenWinrate = 0.5 * (1.0 + values.winLossValue);
+      ev.evenScoreLead = values.lead;
+      ev.evenScoreStdev = values.expectedScoreStdev;
+      ev.ok = true;
+    }
+    catch(...) {
+      ev.ok = false;
+    }
+ 
+    //5) 恢复
+    bot->setPosition(oldPla,oldBoard,oldHist);
+    bot->setParams(genmoveParams);
+    isGenmoveParams = true;
+    return ev;
   }
 
   vector<bool> computeAnticipatedStatuses() {
@@ -2172,6 +2306,15 @@ int MainCmds::gtp(const vector<string>& args) {
     std::move(patternBonusTable)
   );
   engine->setOrResetBoardSize(cfg,logger,seedRand,defaultBoardXSize,defaultBoardYSize,logger.isLoggingToStderr());
+
+    //=============== PATCH: PDA 波动保护配置读取 ===============
+  engine->pdaProtectEnabled = cfg.contains("pdaProtectEnabled") ? cfg.getBool("pdaProtectEnabled") : false;
+  engine->pdaProtectStdevThreshold = cfg.contains("pdaProtectStdevThreshold") ? cfg.getDouble("pdaProtectStdevThreshold",0.0,1000.0) : 20.0;
+  engine->pdaProtectPdaCap = cfg.contains("pdaProtectPdaCap") ? cfg.getDouble("pdaProtectPdaCap",0.0,30.0) : 5.0;
+  engine->pdaProtectSearchMultiplier = cfg.contains("pdaProtectSearchMultiplier") ? cfg.getDouble("pdaProtectSearchMultiplier",0.01,100.0) : 2.0;
+  engine->pdaProtectProbeVisits = (int64_t)(cfg.contains("pdaProtectProbeVisits") ? cfg.getInt("pdaProtectProbeVisits",10,10000000) : 300);
+  engine->pdaProtectPrint = cfg.contains("pdaProtectPrint") ? cfg.getBool("pdaProtectPrint") : true;
+  //=============== PATCH END ===============
 
   auto maybeSaveAvoidPatterns = [&](bool forceSave) {
     if(engine != NULL && autoAvoidPatterns) {

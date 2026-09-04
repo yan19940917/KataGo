@@ -1253,9 +1253,6 @@ struct GTPEngine {
     if(pdaProtectTriggered)
       searchFactor *= pdaProtectSearchMultiplier;
 	  
-        //PATCH: PDA 保护触发时，本手搜索量加倍
-    if(pdaProtectTriggered)
-      searchFactor *= pdaProtectSearchMultiplier;
     lastSearchFactor = searchFactor;
 
     bot->setAvoidMoveUntilByLoc(args.avoidMoveUntilByLocBlack,args.avoidMoveUntilByLocWhite);

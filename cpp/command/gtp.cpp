@@ -240,11 +240,11 @@ static void updateDynamicPDAHelper(
         BoardHistory histCopy = hist;
         histCopy.setAssumeMultipleStartingBlackMovesAreHandicap(true);
         const int handicapStones = histCopy.computeNumHandicapStones();
-        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 12.0, 15.0, 18.0，20.0}; // index = stones-2
+        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 12.0, 15.0, 18.0}; // index = stones-2
         if(handicapStones <= 1)
           pdaCap = 0.0;
         else if(handicapStones >= 9)
-          pdaCap = 12.0;
+          pdaCap = 20.0;
         else
           pdaCap = handicapPDATable[handicapStones - 2];
       }

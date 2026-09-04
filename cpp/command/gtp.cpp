@@ -391,6 +391,12 @@ struct GTPEngine {
   int64_t pdaProtectProbeVisits = 300;      // PDA=0 无偏探针的搜索量
   bool pdaProtectPrint = true;              // 是否打印 Even* 值
 
+ //=============== PATCH: 无偏目差时间调整配置 ===============
+  bool timeAdjustEnabled = false;              // 总开关
+  double timeAdjustLeadThreshold = 10.0;       // 无偏领先阈值（目）
+  double timeAdjustStdevThreshold = 15.0;      // 无偏波动阈值（目）
+  double timeAdjustSearchFactor = 0.5;         // 缩短后的搜索量倍数
+
   Player perspective;
 
   Rand gtpRand;
@@ -1150,14 +1156,17 @@ struct GTPEngine {
       paramsToUse.playoutDoublingAdvantage = desiredDynamicPDA;
     }
 
-        //=============== PATCH BEGIN: PDA 波动保护 ===============
-    //白棋每次落子前先跑 PDA=0 无偏探针并打印 Even* 值；
-    //若 EvenScoreStdev >= 阈值：本手白棋 PDA 降为 min(原PDA, cap)，且搜索量加倍。
+    //=============== PATCH BEGIN: PDA 波动保护 + 时间调整（共用探针）===============
     bool pdaProtectTriggered = false;
-    if(pdaProtectEnabled && pla == P_WHITE) {
+    bool timeAdjusted = false;
+    bool needProbe = (pdaProtectEnabled && pla == P_WHITE) || (timeAdjustEnabled && pla == P_WHITE);
+    PdaProtectEval ev;
+    ev.ok = false;
+
+    if(needProbe) {
       ClockTimer probeTimer;
-      PdaProtectEval ev = computePdaProtectEval(pla, pdaProtectProbeVisits);
- 
+      ev = computePdaProtectEval(pla, pdaProtectProbeVisits);
+
       if(pdaProtectPrint) {
         cerr << "PdaProtect:"
              << " EvenWinrate " << Global::strprintf("%.4f", ev.evenWinrate)
@@ -1166,39 +1175,56 @@ struct GTPEngine {
              << (ev.ok ? "" : " (probe failed)")
              << endl;
       }
- 
-      if(ev.ok && ev.evenScoreStdev >= pdaProtectStdevThreshold) {
-        //折算白棋当前有效 PDA（兼容 playoutDoublingAdvantagePla 的三种取值）
-        double effPdaWhite =
-          (paramsToUse.playoutDoublingAdvantagePla == P_WHITE) ? paramsToUse.playoutDoublingAdvantage :
-          (paramsToUse.playoutDoublingAdvantagePla == P_BLACK) ? -paramsToUse.playoutDoublingAdvantage :
-          paramsToUse.playoutDoublingAdvantage; //C_EMPTY：应用给行棋方（这里是白）
-        double cappedPda = effPdaWhite;
-        if(effPdaWhite > pdaProtectPdaCap)
-          cappedPda = pdaProtectPdaCap;
- 
-        if(paramsToUse.playoutDoublingAdvantagePla == P_BLACK)
-          paramsToUse.playoutDoublingAdvantage = -cappedPda;
-        else
-          paramsToUse.playoutDoublingAdvantage = cappedPda;
- 
-        pdaProtectTriggered = true;
-        if(pdaProtectPrint) {
-          cerr << "PdaProtect: TRIGGERED EvenScoreStdev " << Global::strprintf("%.2f", ev.evenScoreStdev)
-               << " >= " << Global::strprintf("%.2f", pdaProtectStdevThreshold)
-               << " -> PDA " << Global::strprintf("%.3f", effPdaWhite)
-               << " -> " << Global::strprintf("%.3f", cappedPda)
-               << ", search x" << Global::strprintf("%.2f", pdaProtectSearchMultiplier)
-               << endl;
-        }
-      }
- 
-      //时间制下把探针耗时从本手预算里扣除，避免整手超时（仅对有限计时生效）
+
+      // 时间扣除
       double probeSeconds = probeTimer.getSeconds();
       if(tc.mainTimeLeft > 0.0 && tc.mainTimeLeft < 1.0e15)
         tc.mainTimeLeft = std::max(0.0, tc.mainTimeLeft - probeSeconds);
       if(tc.inOvertime && tc.timeLeftInPeriod > 0.0 && tc.timeLeftInPeriod < 1.0e15)
         tc.timeLeftInPeriod = std::max(0.0, tc.timeLeftInPeriod - probeSeconds);
+
+      // ---- PDA 保护逻辑 ----
+      if(pdaProtectEnabled && pla == P_WHITE && ev.ok) {
+        double effPdaWhite =
+          (paramsToUse.playoutDoublingAdvantagePla == P_WHITE) ? paramsToUse.playoutDoublingAdvantage :
+          (paramsToUse.playoutDoublingAdvantagePla == P_BLACK) ? -paramsToUse.playoutDoublingAdvantage :
+          paramsToUse.playoutDoublingAdvantage;
+        double cappedPda = effPdaWhite;
+        if(effPdaWhite > pdaProtectPdaCap)
+          cappedPda = pdaProtectPdaCap;
+
+        if(ev.evenScoreStdev >= pdaProtectStdevThreshold) {
+          if(paramsToUse.playoutDoublingAdvantagePla == P_BLACK)
+            paramsToUse.playoutDoublingAdvantage = -cappedPda;
+          else
+            paramsToUse.playoutDoublingAdvantage = cappedPda;
+
+          pdaProtectTriggered = true;
+          if(pdaProtectPrint) {
+            cerr << "PdaProtect: TRIGGERED EvenScoreStdev " << Global::strprintf("%.2f", ev.evenScoreStdev)
+                 << " >= " << Global::strprintf("%.2f", pdaProtectStdevThreshold)
+                 << " -> PDA " << Global::strprintf("%.3f", effPdaWhite)
+                 << " -> " << Global::strprintf("%.3f", cappedPda)
+                 << ", search x" << Global::strprintf("%.2f", pdaProtectSearchMultiplier)
+                 << endl;
+          }
+        }
+      }
+
+      // ---- 时间调整逻辑（新增） ----
+      if(timeAdjustEnabled && pla == P_WHITE && ev.ok) {
+        if(ev.evenScoreLead >= timeAdjustLeadThreshold && ev.evenScoreStdev <= timeAdjustStdevThreshold) {
+          timeAdjusted = true;
+          if(pdaProtectPrint) {
+            cerr << "TimeAdjust: LEAD " << Global::strprintf("%.2f", ev.evenScoreLead)
+                 << " >= " << Global::strprintf("%.2f", timeAdjustLeadThreshold)
+                 << " and STDEV " << Global::strprintf("%.2f", ev.evenScoreStdev)
+                 << " <= " << Global::strprintf("%.2f", timeAdjustStdevThreshold)
+                 << " -> searchFactor x" << Global::strprintf("%.2f", timeAdjustSearchFactor)
+                 << endl;
+          }
+        }
+      }
     }
     //=============== PATCH END ===============
 
@@ -1218,6 +1244,15 @@ struct GTPEngine {
 
     //Play faster when winning
     double searchFactor = PlayUtils::getSearchFactor(gargs.searchFactorWhenWinningThreshold,gargs.searchFactorWhenWinning,paramsToUse,recentWinLossValues,pla);
+	  
+	   // PATCH: 时间调整触发时，缩短搜索量
+    if(timeAdjusted)
+      searchFactor *= timeAdjustSearchFactor;
+
+    // PATCH: PDA 保护触发时，增加搜索量（原有逻辑）
+    if(pdaProtectTriggered)
+      searchFactor *= pdaProtectSearchMultiplier;
+	  
         //PATCH: PDA 保护触发时，本手搜索量加倍
     if(pdaProtectTriggered)
       searchFactor *= pdaProtectSearchMultiplier;
@@ -2320,6 +2355,13 @@ int MainCmds::gtp(const vector<string>& args) {
   engine->pdaProtectPrint = cfg.contains("pdaProtectPrint") ? cfg.getBool("pdaProtectPrint") : true;
   //=============== PATCH END ===============
 
+ //=============== PATCH: 无偏目差时间调整配置读取 ===============
+  engine->timeAdjustEnabled = cfg.contains("timeAdjustEnabled") ? cfg.getBool("timeAdjustEnabled") : false;
+  engine->timeAdjustLeadThreshold = cfg.contains("timeAdjustLeadThreshold") ? cfg.getDouble("timeAdjustLeadThreshold",0.0,1000.0) : 10.0;
+  engine->timeAdjustStdevThreshold = cfg.contains("timeAdjustStdevThreshold") ? cfg.getDouble("timeAdjustStdevThreshold",0.0,1000.0) : 15.0;
+  engine->timeAdjustSearchFactor = cfg.contains("timeAdjustSearchFactor") ? cfg.getDouble("timeAdjustSearchFactor",0.0,1.0) : 0.5;
+  //=============== PATCH END ===============
+	
   auto maybeSaveAvoidPatterns = [&](bool forceSave) {
     if(engine != NULL && autoAvoidPatterns) {
       int samplesPerSave = 200;

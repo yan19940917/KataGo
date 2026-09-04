@@ -233,14 +233,14 @@ static void updateDynamicPDAHelper(
       const double increment = 0.125;
 
        //PATCH BEGIN: per-handicap PDA table replaces the old hard cap of 2.75.
-      //Auto-detects handicap stones; 2:3.0 3:5.5 4:8.0 5:10.0 6:10.5 7:11.0 8:12.0 9+:12.0, even game: 0.
+      //Auto-detects handicap stones; 2:3.0 3:5.5 4:8.0 5:10.0 6:12.0 7:15.0 8:18.0 9+:20.0, even game: 0.
       //Set dynamicPlayoutDoublingAdvantageCapPerOppLead = 0 in config to disable dynamic PDA entirely.
       double pdaCap;
       {
         BoardHistory histCopy = hist;
         histCopy.setAssumeMultipleStartingBlackMovesAreHandicap(true);
         const int handicapStones = histCopy.computeNumHandicapStones();
-        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 10.5, 11.0, 12.0}; // index = stones-2
+        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 12.0, 15.0, 18.0，20.0}; // index = stones-2
         if(handicapStones <= 1)
           pdaCap = 0.0;
         else if(handicapStones >= 9)

@@ -109,9 +109,6 @@ struct SearchParams {
   float nnPolicyTemperature; //Scale neural net policy probabilities by this temperature, applies everywhere in the tree
   bool antiMirror; //Enable anti-mirroring logic
 
-  // Policy bias for root node (added to network logits). Size must match board area+1, or empty for no bias.
-  vector<float> policyBias;
-
   //Ignore history prior to the root of the search. This is enforced strictly only for the root node of the
   //search. Deeper nodes may see history prior to the root of the search if searches were performed from earlier positions
   //and those gamestates were also reached by those earlier searches with the nn evals cached.

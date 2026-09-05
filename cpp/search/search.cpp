@@ -460,7 +460,54 @@ Loc Search::runWholeSearchAndGetMove(Player movePla) {
 
 Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
   runWholeSearch(movePla,pondering);
-  return getChosenMoveLoc();
+
+  // ===== PATCH BEGIN: 让子棋复杂度奖励选点 =====
+  SearchNode* root = rootNode;
+  if (root == NULL) return Board::NULL_LOC;
+
+  // 计算让子数（根据历史前几手全是黑棋）
+  int handicapStones = 0;
+  for (size_t i = 0; i < rootHistory.moveHistory.size(); i++) {
+    if (rootHistory.moveHistory[i].pla == P_BLACK)
+      handicapStones++;
+    else
+      break; // 一旦出现白棋就停止
+  }
+
+  bool applyComplexity = (searchParams.complexityBonus > 0.0) &&
+                         (handicapStones >= searchParams.complexityMinHandicap);
+
+  double bestScore = -1e100;
+  Loc bestLoc = Board::NULL_LOC;
+
+  SearchNodeChildrenReference children = root->getChildren();
+  int childrenCapacity = children.getCapacity();
+  for (int i = 0; i < childrenCapacity; i++) {
+    const SearchNode* child = children[i].getIfAllocated();
+    if (child == NULL) break;
+    Loc moveLoc = children[i].getMoveLoc();
+    double score = (double)children[i].getEdgeVisits();
+
+    if (applyComplexity) {
+      int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
+      if (pos >= 0 && pos < policySize) {
+        float policyProb = root->getNNOutput()->policyProbs[pos];
+        double bonus = searchParams.complexityBonus * (1.0 - policyProb);
+        if (bonus > searchParams.complexityMaxBonus) bonus = searchParams.complexityMaxBonus;
+        score *= (1.0 + bonus);
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestLoc = moveLoc;
+    }
+  }
+
+  // 如果没有找到任何合法子节点（极罕见），返回 pass
+  if (bestLoc == Board::NULL_LOC) return Board::PASS_LOC;
+  return bestLoc;
+  // ===== PATCH END =====
 }
 
 void Search::runWholeSearch(Player movePla) {

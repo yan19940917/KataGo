@@ -478,7 +478,7 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
   double effectiveComplexityBonus = searchParams.complexityBonus;
   // 让8子及以上，且在开局/中盘前期（手数<80），提升复杂度奖励以打破龟缩
   if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
-      effectiveComplexityBonus *= 1.5; // 提升50%，可调
+      effectiveComplexityBonus *= 2.0; // 提升100%，可调
   }
   // ===== 动态调整结束 =====
  

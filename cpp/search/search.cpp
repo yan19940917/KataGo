@@ -496,6 +496,22 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
     Loc moveLoc = children[i].getMoveLoc();
     double score = (double)children[i].getEdgeVisits();
 
+ // ===== 消长奖励：奖励黑白势力交界处的点（让7子及以上，中盘前） =====
+    double invadeBonus = 1.0;
+    if (handicapStones >= 7 && rootHistory.moveHistory.size() < 100) {
+        if (root->getNNOutput() != nullptr) {
+            int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
+            if (pos >= 0 && pos < policySize) {
+                float owner = root->getNNOutput()->whiteOwnerMap[pos]; // 正值白方，负值黑方
+                // 黑方势力边界（-0.2 ~ -0.8 之间）是最佳消长点
+                if (owner < -0.2 && owner > -0.8) {
+                    invadeBonus = 1.15; // 给予15%奖励，可微调
+                }
+            }
+        }
+    }
+    score *= invadeBonus;
+    
 if (applyComplexity) {
       int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
       if (pos >= 0 && pos < policySize) {

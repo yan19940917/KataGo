@@ -496,11 +496,11 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
     Loc moveLoc = children[i].getMoveLoc();
     double score = (double)children[i].getEdgeVisits();
 
-    if (applyComplexity) {
+if (applyComplexity) {
       int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
       if (pos >= 0 && pos < policySize) {
         float policyProb = root->getNNOutput()->policyProbs[pos];
-        double bonus = searchParams.complexityBonus * (1.0 - policyProb);
+        double bonus = effectiveComplexityBonus * (1.0 - policyProb);
         if (bonus > searchParams.complexityMaxBonus) bonus = searchParams.complexityMaxBonus;
         score *= (1.0 + bonus);
       }

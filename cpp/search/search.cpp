@@ -474,7 +474,15 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
       break; // 一旦出现白棋就停止
   }
 
-  bool applyComplexity = (searchParams.complexityBonus > 0.0) &&
+ // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
+  double effectiveComplexityBonus = searchParams.complexityBonus;
+  // 让8子及以上，且在开局/中盘前期（手数<80），提升复杂度奖励以打破龟缩
+  if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
+      effectiveComplexityBonus *= 1.5; // 提升50%，可调
+  }
+  // ===== 动态调整结束 =====
+ 
+  bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
                          (handicapStones >= searchParams.complexityMinHandicap);
 
   double bestScore = -1e100;

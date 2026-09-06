@@ -2253,6 +2253,15 @@ int MainCmds::gtp(const vector<string>& args) {
     const bool genmoveAntiMirror =
       config.contains("genmoveAntiMirror") ? config.getBool("genmoveAntiMirror") : config.contains("antiMirror") ? config.getBool("antiMirror") : true;
 
+ // ===== 读取自定义复杂度参数（让子棋增强） =====
+    if (config.contains("complexityBonus"))
+        params.complexityBonus = config.getDouble("complexityBonus", 0.0, 10.0);
+    if (config.contains("complexityMinHandicap"))
+        params.complexityMinHandicap = config.getInt("complexityMinHandicap", 0, 20);
+    if (config.contains("complexityMaxBonus"))
+        params.complexityMaxBonus = config.getDouble("complexityMaxBonus", 0.0, 10.0);
+    // ===== 结束 =====
+	  
     genmoveOut = params;
     analysisOut = params;
 

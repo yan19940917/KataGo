@@ -1,0 +1,58 @@
+name: Build patched KataGo (Linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04               # ← 从 windows-2022 改为 ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install CUDA
+        uses: Jimver/cuda-toolkit@v0.2.21
+        with:
+          cuda: '12.8.0'
+          method: 'network'
+
+      - name: Install cuDNN (Linux)
+        shell: bash                     # ← 从 pwsh 改为 bash
+        run: |
+          # 下载 cuDNN Linux 版（与 Windows 版版本号保持一致）
+          wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+          tar -xvf cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+          # 复制头文件和库到 CUDA 安装目录
+          sudo cp -P cudnn-linux-x86_64-9.8.0.87_cuda12-archive/include/* /usr/local/cuda/include/
+          sudo cp -P cudnn-linux-x86_64-9.8.0.87_cuda12-archive/lib/* /usr/local/cuda/lib64/
+          sudo chmod a+r /usr/local/cuda/include/* /usr/local/cuda/lib64/*
+
+      - name: Install zlib (Linux)
+        shell: bash                     # ← 从 cmd 改为 bash
+        run: |
+          # Linux 下直接用 apt 安装，不用自己编译（比 Windows 简单）
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev
+
+      - name: Build
+        shell: bash                     # ← 从 cmd 改为 bash
+        run: |
+          cd cpp
+          # 去掉 -G "Visual Studio ..." 和 -A x64（Linux 不需要）
+          # 保留 CUDA 架构参数和 zlib 路径
+          cmake . \
+            -DUSE_BACKEND=CUDA \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;120" \
+            -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler \
+            -DCMAKE_BUILD_TYPE=Release
+          # 用 make 代替 cmake --build
+          make -j$(nproc)
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: katago-patched-linux64      # ← 改个名字区分
+          path: cpp/katago                  # ← Linux 下没有 .exe 后缀
+          if-no-files-found: error

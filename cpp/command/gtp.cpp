@@ -233,18 +233,18 @@ static void updateDynamicPDAHelper(
       const double increment = 0.125;
 
        //PATCH BEGIN: per-handicap PDA table replaces the old hard cap of 2.75.
-      //Auto-detects handicap stones; 2:3.0 3:4.0 4:5.0 5:6.0 6:7.0 7:8.0 8:9.0 9+:10.0, even game: 0.
+      //Auto-detects handicap stones; 2:3.0 3:5.5 4:8.0 5:10.0 6:10.5 7:11.0 8:12.0 9+:12.0, even game: 0.
       //Set dynamicPlayoutDoublingAdvantageCapPerOppLead = 0 in config to disable dynamic PDA entirely.
       double pdaCap;
       {
         BoardHistory histCopy = hist;
         histCopy.setAssumeMultipleStartingBlackMovesAreHandicap(true);
         const int handicapStones = histCopy.computeNumHandicapStones();
-        static const double handicapPDATable[] = {3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}; // index = stones-2
+        static const double handicapPDATable[] = {3.0, 5.5, 8.0, 10.0, 10.5, 11.0, 12.0}; // index = stones-2
         if(handicapStones <= 1)
           pdaCap = 0.0;
         else if(handicapStones >= 9)
-          pdaCap = 10.0;
+          pdaCap = 12.0;
         else
           pdaCap = handicapPDATable[handicapStones - 2];
       }
@@ -1143,6 +1143,21 @@ struct GTPEngine {
     updateDynamicPDA();
 
     SearchParams paramsToUse = genmoveParams;
+
+	  // ===== 动态设置根节点温度（让子棋） =====
+const BoardHistory& hist = bot->getRootHist();
+int handicap = hist.computeNumHandicapStones();
+if (handicap >= 2) {
+    if (handicap >= 7) {
+        paramsToUse.rootPolicyTemperature = 2.0;
+    } else if (handicap >= 5) {
+        paramsToUse.rootPolicyTemperature = 1.5;
+    } else {
+        paramsToUse.rootPolicyTemperature = 1.2;
+    }
+}
+// ===== 结束 =====
+	  
     //Make sure we have the right parameters, in case someone updated params in the meantime.
     if(!staticPDATakesPrecedence) {
       double desiredDynamicPDA =

@@ -476,10 +476,13 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
 
  // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
   double effectiveComplexityBonus = searchParams.complexityBonus;
-  // 让8子及以上，且在开局/中盘前期（手数<80），提升复杂度奖励以打破龟缩
-  if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
-      effectiveComplexityBonus *= 2.0; // 提升100%，可调
-  }
+if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
+    effectiveComplexityBonus *= 2.5;
+} else if (handicapStones >= 5 && rootHistory.moveHistory.size() < 80) {
+    effectiveComplexityBonus *= 1.8;
+} else if (handicapStones >= 2 && rootHistory.moveHistory.size() < 80) {
+    effectiveComplexityBonus *= 1.3;
+}
   // ===== 动态调整结束 =====
  
   bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
@@ -497,20 +500,21 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
     double score = (double)children[i].getEdgeVisits();
 
  // ===== 消长奖励：奖励黑白势力交界处的点（让7子及以上，中盘前） =====
-    double invadeBonus = 1.0;
-    if (handicapStones >= 7 && rootHistory.moveHistory.size() < 100) {
-        if (root->getNNOutput() != nullptr) {
-            int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
-            if (pos >= 0 && pos < policySize) {
-                float owner = root->getNNOutput()->whiteOwnerMap[pos]; // 正值白方，负值黑方
-                // 黑方势力边界（-0.2 ~ -0.8 之间）是最佳消长点
-                if (owner < -0.2 && owner > -0.8) {
-                    invadeBonus = 1.15; // 给予15%奖励，可微调
-                }
+double invadeBonus = 1.0;
+if (handicapStones >= 2 && rootHistory.moveHistory.size() < 120) {
+    if (root->getNNOutput() != nullptr) {
+        int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
+        if (pos >= 0 && pos < policySize) {
+            float owner = root->getNNOutput()->whiteOwnerMap[pos];
+            if (owner < -0.1 && owner > -0.9) {
+                if (handicapStones >= 7) invadeBonus = 1.35;
+                else if (handicapStones >= 5) invadeBonus = 1.25;
+                else invadeBonus = 1.15;
             }
         }
     }
-    score *= invadeBonus;
+}
+score *= invadeBonus;
     
 if (applyComplexity) {
       int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);

@@ -475,12 +475,11 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
   }
 
  // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
-  double effectiveComplexityBonus = searchParams.complexityBonus;
-if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
+ if (handicapStones >= 7 && rootHistory.moveHistory.size() < 200) {  // 80 → 200
     effectiveComplexityBonus *= 2.5;
-} else if (handicapStones >= 5 && rootHistory.moveHistory.size() < 80) {
+} else if (handicapStones >= 5 && rootHistory.moveHistory.size() < 200) {
     effectiveComplexityBonus *= 1.8;
-} else if (handicapStones >= 2 && rootHistory.moveHistory.size() < 80) {
+} else if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {
     effectiveComplexityBonus *= 1.3;
 }
   // ===== 动态调整结束 =====
@@ -501,15 +500,17 @@ if (handicapStones >= 7 && rootHistory.moveHistory.size() < 80) {
 
  // ===== 消长奖励：奖励黑白势力交界处的点（让7子及以上，中盘前） =====
 double invadeBonus = 1.0;
-if (handicapStones >= 2 && rootHistory.moveHistory.size() < 120) {
+if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {  // 可酌情延长时限
     if (root->getNNOutput() != nullptr) {
         int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
         if (pos >= 0 && pos < policySize) {
             float owner = root->getNNOutput()->whiteOwnerMap[pos];
-            if (owner < -0.1 && owner > -0.9) {
-                if (handicapStones >= 7) invadeBonus = 1.35;
-                else if (handicapStones >= 5) invadeBonus = 1.25;
-                else invadeBonus = 1.15;
+            // 只要黑棋优势超过 5% 就给予奖励，且越黑奖励越大
+            if (owner < -0.05) {
+                double absOwner = -owner;  // 0.05 ~ 1.0
+                if (handicapStones >= 7) invadeBonus = 1.0 + 0.6 * absOwner;  // 最高 1.6
+                else if (handicapStones >= 5) invadeBonus = 1.0 + 0.4 * absOwner;
+                else invadeBonus = 1.0 + 0.2 * absOwner;
             }
         }
     }

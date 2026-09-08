@@ -465,14 +465,10 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
   SearchNode* root = rootNode;
   if (root == NULL) return Board::NULL_LOC;
 
-  // 计算让子数（根据历史前几手全是黑棋）
-  int handicapStones = 0;
-  for (size_t i = 0; i < rootHistory.moveHistory.size(); i++) {
-    if (rootHistory.moveHistory[i].pla == P_BLACK)
-      handicapStones++;
-    else
-      break; // 一旦出现白棋就停止
-  }
+  // 计算让子数：与 gtp.cpp 的 PDA 表同一口径。
+  // 必须用 computeNumHandicapStones()——set_free_handicap 放的让子子在初始棋盘上、
+  // 不在 moveHistory 里，手写循环数不到它们，会导致奖励在让子对局中从未生效。
+  int handicapStones = rootHistory.computeNumHandicapStones();
 
   double effectiveComplexityBonus = searchParams.complexityBonus;
 
@@ -490,20 +486,45 @@ bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
                        (handicapStones >= searchParams.complexityMinHandicap) &&
                        (movePla == P_WHITE);   // 加这一行，只让白棋“拼命”
 
+  // 第一遍：找出根节点子结点的最大访问数。
   double bestScore = -1e100;
   Loc bestLoc = Board::NULL_LOC;
+  int64_t maxChildVisits = 0;
 
   SearchNodeChildrenReference children = root->getChildren();
   int childrenCapacity = children.getCapacity();
   for (int i = 0; i < childrenCapacity; i++) {
     const SearchNode* child = children[i].getIfAllocated();
     if (child == NULL) break;
-    Loc moveLoc = children[i].getMoveLoc();
-    double score = (double)children[i].getEdgeVisits();
+    int64_t v = children[i].getEdgeVisits();
+    if(v > maxChildVisits)
+      maxChildVisits = v;
+  }
 
- // ===== 消长奖励：奖励黑白势力交界处的点（让7子及以上，中盘前） =====
+  // 奖励只能作用于"访问数达到最佳着 50%"的候选：在搜索算清楚的点里挑激进的一个，
+  // 而不是把没算过的低访问点（如贴身乱战）抬进决策。
+  const double topCandidateGate = 0.5;
+
+  for (int i = 0; i < childrenCapacity; i++) {
+    const SearchNode* child = children[i].getIfAllocated();
+    if (child == NULL) break;
+    Loc moveLoc = children[i].getMoveLoc();
+    double visits = (double)children[i].getEdgeVisits();
+
+    if(visits < topCandidateGate * (double)maxChildVisits) {
+      // 门槛外：仅作为兜底（奖励全为 1 时等价于取访问数最大者）
+      if(visits > bestScore) {
+        bestScore = visits;
+        bestLoc = moveLoc;
+      }
+      continue;
+    }
+
+    double score = visits;
+
+ // ===== 消长奖励：奖励黑白势力交界处的点（让2子及以上，前200手） =====
 double invadeBonus = 1.0;
-if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {  // 可酌情延长时限
+if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {
     if (root->getNNOutput() != nullptr) {
         int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
         if (pos >= 0 && pos < policySize) {
@@ -519,7 +540,7 @@ if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {  // 可酌情
     }
 }
 score *= invadeBonus;
-    
+
 if (applyComplexity) {
       int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
       if (pos >= 0 && pos < policySize) {

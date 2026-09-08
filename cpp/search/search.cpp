@@ -474,7 +474,9 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
       break; // 一旦出现白棋就停止
   }
 
- // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
+  double effectiveComplexityBonus = searchParams.complexityBonus;
+
+  // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
  if (handicapStones >= 7 && rootHistory.moveHistory.size() < 200) {  // 80 → 200
     effectiveComplexityBonus *= 2.5;
 } else if (handicapStones >= 5 && rootHistory.moveHistory.size() < 200) {
@@ -484,8 +486,9 @@ Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
 }
   // ===== 动态调整结束 =====
  
-  bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
-                         (handicapStones >= searchParams.complexityMinHandicap);
+bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
+                       (handicapStones >= searchParams.complexityMinHandicap) &&
+                       (movePla == P_WHITE);   // 加这一行，只让白棋“拼命”
 
   double bestScore = -1e100;
   Loc bestLoc = Board::NULL_LOC;

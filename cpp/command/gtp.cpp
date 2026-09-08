@@ -1149,11 +1149,11 @@ const BoardHistory& hist = bot->getRootHist();
 int handicap = hist.computeNumHandicapStones();
 if (handicap >= 2) {
     if (handicap >= 7) {
-        paramsToUse.rootPolicyTemperature = 2.0;
+        paramsToUse.rootPolicyTemperature = 1.0;
     } else if (handicap >= 5) {
-        paramsToUse.rootPolicyTemperature = 1.5;
-    } else {
         paramsToUse.rootPolicyTemperature = 1.2;
+    } else {
+        paramsToUse.rootPolicyTemperature = 1.0;
     }
 }
 // ===== 结束 =====

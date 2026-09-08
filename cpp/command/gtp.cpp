@@ -1143,21 +1143,7 @@ struct GTPEngine {
     updateDynamicPDA();
 
     SearchParams paramsToUse = genmoveParams;
-
-	  // ===== 动态设置根节点温度（让子棋） =====
-const BoardHistory& hist = bot->getRootHist();
-int handicap = hist.computeNumHandicapStones();
-if (handicap >= 2) {
-    if (handicap >= 7) {
-        paramsToUse.rootPolicyTemperature = 1.0;
-    } else if (handicap >= 5) {
-        paramsToUse.rootPolicyTemperature = 1.2;
-    } else {
-        paramsToUse.rootPolicyTemperature = 1.0;
-    }
-}
-// ===== 结束 =====
-	  
+  
     //Make sure we have the right parameters, in case someone updated params in the meantime.
     if(!staticPDATakesPrecedence) {
       double desiredDynamicPDA =

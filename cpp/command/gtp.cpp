@@ -1236,9 +1236,9 @@ struct GTPEngine {
     //=============== PATCH END ===============
 
    {
-      //PATCH: 模式规避惩罚只在让子局生效，分先对局一律为 0。
-      //（配置里的 avoidRepeatedPatternUtility=0.05 是默认值 0 的 10 倍，原来分先也在承受该惩罚）
-      double avoidRepeatedPatternUtility = 0.0;
+      //PATCH: 模式规避惩罚分两档——让子局用配置值(0.05)，分先局固定 0.005。
+      //（官方默认是分先 0 / 让子 0.005；此处按需求让分先也带 0.005 的轻度多样性）
+      double avoidRepeatedPatternUtility = 0.005;
       if(!args.analyzing) {
         double initialOppAdvantage = initialBlackAdvantage(bot->getRootHist()) * (pla == P_WHITE ? 1 : -1);
         if(initialOppAdvantage > getPointsThresholdForHandicapGame(getBoardSizeScaling(bot->getRootBoard())))

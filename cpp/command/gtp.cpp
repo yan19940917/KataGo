@@ -1160,7 +1160,13 @@ struct GTPEngine {
     //=============== PATCH BEGIN: PDA 波动保护 + 时间调整（共用探针）===============
     bool pdaProtectTriggered = false;
     bool timeAdjusted = false;
-    bool needProbe = (pdaProtectEnabled && pla == P_WHITE) || (timeAdjustEnabled && pla == P_WHITE);
+    //PATCH: 探针只在让子局运行。分先时 PDA 恒为 0、保护逻辑不可能触发，
+    //跑探针纯属浪费（每手白棋 1000 访问 + 清空搜索树）。
+    //判定口径与下方 avoidRepeatedPatternUtility 的让子判定一致。
+    const bool isHandicapGameForProbe =
+      initialBlackAdvantage(bot->getRootHist()) > getPointsThresholdForHandicapGame(getBoardSizeScaling(bot->getRootBoard()));
+    bool needProbe = (pdaProtectEnabled && pla == P_WHITE && isHandicapGameForProbe) ||
+                     (timeAdjustEnabled && pla == P_WHITE && isHandicapGameForProbe);
     PdaProtectEval ev;
     ev.ok = false;
 
@@ -1230,7 +1236,9 @@ struct GTPEngine {
     //=============== PATCH END ===============
 
    {
-      double avoidRepeatedPatternUtility = normalAvoidRepeatedPatternUtility;
+      //PATCH: 模式规避惩罚只在让子局生效，分先对局一律为 0。
+      //（配置里的 avoidRepeatedPatternUtility=0.05 是默认值 0 的 10 倍，原来分先也在承受该惩罚）
+      double avoidRepeatedPatternUtility = 0.0;
       if(!args.analyzing) {
         double initialOppAdvantage = initialBlackAdvantage(bot->getRootHist()) * (pla == P_WHITE ? 1 : -1);
         if(initialOppAdvantage > getPointsThresholdForHandicapGame(getBoardSizeScaling(bot->getRootBoard())))

@@ -49,6 +49,7 @@ int MainCmds::runtests(const vector<string>& args) {
 
   Tests::runBoardUndoTest();
   Tests::runBoardHandicapTest();
+  Tests::runHandicapMoyoTests();
   Tests::runBoardStressTest();
 
   Tests::runSgfTests();

@@ -1160,13 +1160,7 @@ struct GTPEngine {
     //=============== PATCH BEGIN: PDA 波动保护 + 时间调整（共用探针）===============
     bool pdaProtectTriggered = false;
     bool timeAdjusted = false;
-    //PATCH: 探针只在让子局运行。分先时 PDA 恒为 0、保护逻辑不可能触发，
-    //跑探针纯属浪费（每手白棋 1000 访问 + 清空搜索树）。
-    //判定口径与下方 avoidRepeatedPatternUtility 的让子判定一致。
-    const bool isHandicapGameForProbe =
-      initialBlackAdvantage(bot->getRootHist()) > getPointsThresholdForHandicapGame(getBoardSizeScaling(bot->getRootBoard()));
-    bool needProbe = (pdaProtectEnabled && pla == P_WHITE && isHandicapGameForProbe) ||
-                     (timeAdjustEnabled && pla == P_WHITE && isHandicapGameForProbe);
+    bool needProbe = (pdaProtectEnabled && pla == P_WHITE) || (timeAdjustEnabled && pla == P_WHITE);
     PdaProtectEval ev;
     ev.ok = false;
 
@@ -1236,9 +1230,7 @@ struct GTPEngine {
     //=============== PATCH END ===============
 
    {
-      //PATCH: 模式规避惩罚分两档——让子局用配置值(0.05)，分先局固定 0.005。
-      //（官方默认是分先 0 / 让子 0.005；此处按需求让分先也带 0.005 的轻度多样性）
-      double avoidRepeatedPatternUtility = 0.005;
+      double avoidRepeatedPatternUtility = normalAvoidRepeatedPatternUtility;
       if(!args.analyzing) {
         double initialOppAdvantage = initialBlackAdvantage(bot->getRootHist()) * (pla == P_WHITE ? 1 : -1);
         if(initialOppAdvantage > getPointsThresholdForHandicapGame(getBoardSizeScaling(bot->getRootBoard())))
@@ -2262,15 +2254,7 @@ int MainCmds::gtp(const vector<string>& args) {
     const bool genmoveAntiMirror =
       config.contains("genmoveAntiMirror") ? config.getBool("genmoveAntiMirror") : config.contains("antiMirror") ? config.getBool("antiMirror") : true;
 
- // ===== 读取自定义复杂度参数（让子棋增强） =====
-    if (config.contains("complexityBonus"))
-        params.complexityBonus = config.getDouble("complexityBonus", 0.0, 10.0);
-    if (config.contains("complexityMinHandicap"))
-        params.complexityMinHandicap = config.getInt("complexityMinHandicap", 0, 20);
-    if (config.contains("complexityMaxBonus"))
-        params.complexityMaxBonus = config.getDouble("complexityMaxBonus", 0.0, 10.0);
-    // ===== 结束 =====
-	  
+
     genmoveOut = params;
     analysisOut = params;
 

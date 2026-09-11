@@ -178,12 +178,11 @@ struct SearchParams {
   double humanSLChosenMoveProp; //Proportion of final move selection probability using human SL policy
   bool humanSLChosenMoveIgnorePass; //If true, ignore human SL pass probability and use KataGo's passing logic
   double humanSLChosenMovePiklLambda; //Shift the final move selection significantly in response to utility differences this large.
- // 让子棋中鼓励复杂选点的奖励强度（0=关闭，建议 0.05~0.2）
-  double complexityBonus = 0.0;
-  // 触发奖励的最小让子数（让子数 >= 此值才生效）
-  int complexityMinHandicap = 2;
-  // 单点奖励的上限（防止奖励过大导致选点离谱）
-  double complexityMaxBonus = 0.2;
+  // Experimental handicap root-policy mass budget. Zero disables it entirely.
+  // Legacy names retained; these are NOT post-search visit/value multipliers.
+  double complexityBonus;
+  int complexityMinHandicap;
+  double complexityMaxBonus;
 
   SearchParams();
   ~SearchParams();

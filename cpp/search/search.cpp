@@ -292,6 +292,12 @@ void Search::setParams(const SearchParams& params) {
 }
 
 void Search::setParamsNoClearing(const SearchParams& params) {
+  // Root policy transforms already stored in NNOutput must not survive changing
+  // or disabling the custom exploration, even via this normally non-clearing API.
+  if(searchParams.complexityBonus != params.complexityBonus ||
+     searchParams.complexityMinHandicap != params.complexityMinHandicap ||
+     searchParams.complexityMaxBonus != params.complexityMaxBonus)
+    clearSearch();
   searchParams = params;
   //Deliberately overrides the "no clearing" if the resolved pass-alive mode actually changes,
   //since in that case no search state is valid to keep.
@@ -460,83 +466,7 @@ Loc Search::runWholeSearchAndGetMove(Player movePla) {
 
 Loc Search::runWholeSearchAndGetMove(Player movePla, bool pondering) {
   runWholeSearch(movePla,pondering);
-
-  // ===== PATCH BEGIN: 让子棋复杂度奖励选点 =====
-  SearchNode* root = rootNode;
-  if (root == NULL) return Board::NULL_LOC;
-
-  // 计算让子数：必须用官方口径 computeNumHandicapStones()。
-  // set_free_handicap 放的让子子在初始棋盘上、不在 moveHistory 里，
-  // 原来的手写循环在 GTP 让子对局中数出来恒为 0，导致两个奖励从未生效。
-  // 该函数 = 初始棋盘黑子数 + 开局连续黑棋手数；分先返回 0。
-  int handicapStones = rootHistory.computeNumHandicapStones();
-
-  double effectiveComplexityBonus = searchParams.complexityBonus;
-
-  // ===== 动态调整复杂度奖励（针对龟缩型对手） =====
- if (handicapStones >= 7 && rootHistory.moveHistory.size() < 200) {  // 80 → 200
-    effectiveComplexityBonus *= 2.5;
-} else if (handicapStones >= 5 && rootHistory.moveHistory.size() < 200) {
-    effectiveComplexityBonus *= 1.8;
-} else if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {
-    effectiveComplexityBonus *= 1.3;
-}
-  // ===== 动态调整结束 =====
- 
-bool applyComplexity = (effectiveComplexityBonus > 0.0) &&
-                       (handicapStones >= searchParams.complexityMinHandicap) &&
-                       (movePla == P_WHITE);   // 加这一行，只让白棋“拼命”
-
-  double bestScore = -1e100;
-  Loc bestLoc = Board::NULL_LOC;
-
-  SearchNodeChildrenReference children = root->getChildren();
-  int childrenCapacity = children.getCapacity();
-  for (int i = 0; i < childrenCapacity; i++) {
-    const SearchNode* child = children[i].getIfAllocated();
-    if (child == NULL) break;
-    Loc moveLoc = children[i].getMoveLoc();
-    double score = (double)children[i].getEdgeVisits();
-
- // ===== 消长奖励：奖励黑白势力交界处的点（让7子及以上，中盘前） =====
-double invadeBonus = 1.0;
-if (handicapStones >= 2 && rootHistory.moveHistory.size() < 200) {  // 可酌情延长时限
-    if (root->getNNOutput() != nullptr && root->getNNOutput()->whiteOwnerMap != nullptr) {
-        int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
-        if (pos >= 0 && pos < policySize) {
-            float owner = root->getNNOutput()->whiteOwnerMap[pos];
-            // 只要黑棋优势超过 5% 就给予奖励，且越黑奖励越大
-            if (owner < -0.05) {
-                double absOwner = -owner;  // 0.05 ~ 1.0
-                if (handicapStones >= 7) invadeBonus = 1.0 + 0.6 * absOwner;  // 最高 1.6
-                else if (handicapStones >= 5) invadeBonus = 1.0 + 0.4 * absOwner;
-                else invadeBonus = 1.0 + 0.2 * absOwner;
-            }
-        }
-    }
-}
-score *= invadeBonus;
-    
-if (applyComplexity && root->getNNOutput() != nullptr) {
-      int pos = NNPos::locToPos(moveLoc, rootBoard.x_size, nnXLen, nnYLen);
-      if (pos >= 0 && pos < policySize) {
-        float policyProb = root->getNNOutput()->policyProbs[pos];
-        double bonus = effectiveComplexityBonus * (1.0 - policyProb);
-        if (bonus > searchParams.complexityMaxBonus) bonus = searchParams.complexityMaxBonus;
-        score *= (1.0 + bonus);
-      }
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestLoc = moveLoc;
-    }
-  }
-
-  // 如果没有找到任何合法子节点（极罕见），返回 pass
-  if (bestLoc == Board::NULL_LOC) return Board::PASS_LOC;
-  return bestLoc;
-  // ===== PATCH END =====
+  return getChosenMoveLoc();
 }
 
 void Search::runWholeSearch(Player movePla) {

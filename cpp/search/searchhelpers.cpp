@@ -3,6 +3,7 @@
 #include "../core/fancymath.h"
 #include "../core/test.h"
 #include "../search/searchnode.h"
+#include "../search/handicap.h"
 #include "../search/patternbonustable.h"
 
 //------------------------
@@ -156,7 +157,8 @@ std::shared_ptr<NNOutput>* Search::maybeAddPolicyNoiseAndTemp(SearchThread& thre
      searchParams.rootPolicyTemperature == 1.0 &&
      searchParams.rootPolicyTemperatureEarly == 1.0 &&
      rootHintLoc == Board::NULL_LOC &&
-     !avoidMoveUntilRescaleRoot
+     !avoidMoveUntilRescaleRoot &&
+     !(oldNNOutput != NULL && HandicapSearch::explorationBudget(rootBoard,rootHistory,rootPla,searchParams,*oldNNOutput) > 0.0)
   )
     return NULL;
   if(oldNNOutput == NULL)
@@ -204,6 +206,12 @@ std::shared_ptr<NNOutput>* Search::maybeAddPolicyNoiseAndTemp(SearchThread& thre
       }
     }
   }
+
+  // Shape exploration, not the value estimate or final visits. This shared root
+  // path is used by AsyncBot/GTP, analysis, and synchronous Search alike.
+  HandicapSearch::applyMoyoPolicy(
+    rootBoard,rootHistory,rootPla,rootSafeArea,searchParams,*oldNNOutput,noisedPolicyProbs
+  );
 
   if(searchParams.rootNoiseEnabled) {
     addDirichletNoise(searchParams, thread.rand, policySize, noisedPolicyProbs);

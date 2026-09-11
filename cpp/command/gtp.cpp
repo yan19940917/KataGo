@@ -1546,6 +1546,8 @@ struct GTPEngine {
     {
       SearchParams tmpParams = genmoveParams;
       tmpParams.playoutDoublingAdvantage = 0.0;
+      // Keep PDA-neutral auxiliary searches free of custom moyo exploration.
+      tmpParams.complexityBonus = 0.0;
       tmpParams.conservativePass = true;
       tmpParams.humanSLChosenMoveProp = 0.0;
       tmpParams.humanSLRootExploreProbWeightful = 0.0;
@@ -1620,6 +1622,8 @@ struct GTPEngine {
     {
       SearchParams tmpParams = genmoveParams;
       tmpParams.playoutDoublingAdvantage = 0.0;
+      // Keep PDA-neutral auxiliary searches free of custom moyo exploration.
+      tmpParams.complexityBonus = 0.0;
       tmpParams.playoutDoublingAdvantagePla = C_EMPTY;
       tmpParams.conservativePass = true;
       tmpParams.humanSLChosenMoveProp = 0.0;
@@ -1683,6 +1687,8 @@ struct GTPEngine {
     {
       SearchParams tmpParams = genmoveParams;
       tmpParams.playoutDoublingAdvantage = 0.0;
+      // Keep PDA-neutral auxiliary searches free of custom moyo exploration.
+      tmpParams.complexityBonus = 0.0;
       tmpParams.conservativePass = true;
       tmpParams.humanSLChosenMoveProp = 0.0;
       tmpParams.humanSLRootExploreProbWeightful = 0.0;

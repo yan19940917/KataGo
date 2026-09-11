@@ -19,6 +19,8 @@ namespace Tests {
   void runBoardBasicTests();
   void runBoardUndoTest();
   void runBoardHandicapTest();
+  //testhandicap.cpp
+  void runHandicapMoyoTests();
   void runBoardStressTest();
   void runBoardReplayTest();
 

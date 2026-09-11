@@ -690,6 +690,18 @@ vector<SearchParams> Setup::loadParams(
     else                                      params.useNonBuggyLcb = (setupFor != SETUP_FOR_DISTRIBUTED && setupFor != SETUP_FOR_OTHER);
 
 
+    // Custom handicap exploration parameters belong in the shared loader so
+    // GTP, analysis, match, and per-bot overrides all use the same semantics.
+    if(cfg.contains("complexityBonus"+idxStr)) params.complexityBonus = cfg.getDouble("complexityBonus"+idxStr,0.0,10.0);
+    else if(cfg.contains("complexityBonus")) params.complexityBonus = cfg.getDouble("complexityBonus",0.0,10.0);
+    else params.complexityBonus = 0.0;
+    if(cfg.contains("complexityMinHandicap"+idxStr)) params.complexityMinHandicap = cfg.getInt("complexityMinHandicap"+idxStr,0,20);
+    else if(cfg.contains("complexityMinHandicap")) params.complexityMinHandicap = cfg.getInt("complexityMinHandicap",0,20);
+    else params.complexityMinHandicap = 2;
+    if(cfg.contains("complexityMaxBonus"+idxStr)) params.complexityMaxBonus = cfg.getDouble("complexityMaxBonus"+idxStr,0.0,10.0);
+    else if(cfg.contains("complexityMaxBonus")) params.complexityMaxBonus = cfg.getDouble("complexityMaxBonus",0.0,10.0);
+    else params.complexityMaxBonus = 0.2;
+
     if(cfg.contains("rootEndingBonusPoints"+idxStr)) params.rootEndingBonusPoints = cfg.getDouble("rootEndingBonusPoints"+idxStr, -1.0, 1.0);
     else if(cfg.contains("rootEndingBonusPoints"))   params.rootEndingBonusPoints = cfg.getDouble("rootEndingBonusPoints",        -1.0, 1.0);
     else                                             params.rootEndingBonusPoints = 0.5;

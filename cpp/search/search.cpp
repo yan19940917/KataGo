@@ -6,6 +6,7 @@
 #include "../search/search.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
 #include "../core/fancymath.h"
@@ -84,6 +85,9 @@ Search::Search(const SearchParams& params, NNEvaluator* nnEval, NNEvaluator* hum
    mirrorAdvantage(0.0),
    mirrorCenterSymmetryError(1e10),
    alwaysIncludeOwnerMap(false),
+   handicapNeutralEvalValid(false),
+   handicapNeutralScoreMean(NAN),
+   handicapNeutralOwnerMap(NULL),
    searchParams(params),numSearchesBegun(0),searchNodeAge(0),
    plaThatSearchIsFor(C_EMPTY),plaThatSearchIsForLastSearch(C_EMPTY),
    lastSearchNumPlayouts(0),
@@ -127,6 +131,7 @@ Search::Search(const SearchParams& params, NNEvaluator* nnEval, NNEvaluator* hum
   rootKoHashTable = new KoHashTable();
 
   rootSafeArea = new Color[Board::MAX_ARR_SIZE];
+  handicapNeutralOwnerMap = new float[NNPos::MAX_BOARD_AREA];
 
   valueWeightDistribution = new DistributionTable(
     [](double z) { return FancyMath::tdistpdf(z,VALUE_WEIGHT_DEGREES_OF_FREEDOM); },
@@ -149,6 +154,7 @@ Search::~Search() {
   clearSearch();
 
   delete[] rootSafeArea;
+  delete[] handicapNeutralOwnerMap;
   delete rootKoHashTable;
   delete valueWeightDistribution;
 
@@ -207,6 +213,7 @@ void Search::applyHistoryModesToRootHistory() {
 
 void Search::setPosition(Player pla, const Board& board, const BoardHistory& history) {
   clearSearch();
+  clearHandicapNeutralEval();
   rootPla = pla;
   plaThatSearchIsFor = C_EMPTY;
   rootBoard = board;
@@ -219,6 +226,7 @@ void Search::setPosition(Player pla, const Board& board, const BoardHistory& his
 
 void Search::setPlayerAndClearHistory(Player pla) {
   clearSearch();
+  clearHandicapNeutralEval();
   rootPla = pla;
   plaThatSearchIsFor = C_EMPTY;
   rootBoard.clearSimpleKoLoc();
@@ -246,6 +254,7 @@ void Search::setPlayerIfNew(Player pla) {
 void Search::setKomiIfNew(float newKomi) {
   if(rootHistory.rules.komi != newKomi) {
     clearSearch();
+    clearHandicapNeutralEval();
     rootHistory.setKomi(newKomi);
   }
   applyHistoryModesToRootHistory();
@@ -277,6 +286,26 @@ void Search::setAlwaysIncludeOwnerMap(bool b) {
   alwaysIncludeOwnerMap = b;
 }
 
+void Search::setHandicapNeutralEval(const NNOutput* nnOutput) {
+  clearHandicapNeutralEval();
+  if(nnOutput == NULL || nnOutput->whiteOwnerMap == NULL ||
+     nnOutput->nnXLen != nnXLen || nnOutput->nnYLen != nnYLen ||
+     !std::isfinite(nnOutput->whiteScoreMean))
+    return;
+  handicapNeutralScoreMean = nnOutput->whiteScoreMean;
+  std::copy(
+    nnOutput->whiteOwnerMap,
+    nnOutput->whiteOwnerMap + nnXLen * nnYLen,
+    handicapNeutralOwnerMap
+  );
+  handicapNeutralEvalValid = true;
+}
+
+void Search::clearHandicapNeutralEval() {
+  handicapNeutralEvalValid = false;
+  handicapNeutralScoreMean = NAN;
+}
+
 void Search::setRootSymmetryPruningOnly(const std::vector<int>& v) {
   if(rootPruneOnlySymmetries == v)
     return;
@@ -287,6 +316,7 @@ void Search::setRootSymmetryPruningOnly(const std::vector<int>& v) {
 
 void Search::setParams(const SearchParams& params) {
   clearSearch();
+  clearHandicapNeutralEval();
   searchParams = params;
   applyHistoryModesToRootHistory();
 }
@@ -299,6 +329,7 @@ void Search::setParamsNoClearing(const SearchParams& params) {
      searchParams.complexityMaxBonus != params.complexityMaxBonus)
     clearSearch();
   searchParams = params;
+  clearHandicapNeutralEval();
   //Deliberately overrides the "no clearing" if the resolved pass-alive mode actually changes,
   //since in that case no search state is valid to keep.
   applyHistoryModesToRootHistory();
@@ -326,6 +357,7 @@ void Search::setExternalEvalCache(const std::shared_ptr<EvalCacheTable>& cache) 
 
 void Search::setNNEval(NNEvaluator* nnEval) {
   clearSearch();
+  clearHandicapNeutralEval();
   nnEvaluator = nnEval;
   nnXLen = nnEval->getNNXLen();
   nnYLen = nnEval->getNNYLen();
@@ -367,6 +399,7 @@ bool Search::makeMove(Loc moveLoc, Player movePla) {
 }
 
 bool Search::makeMove(Loc moveLoc, Player movePla, bool preventEncore) {
+  clearHandicapNeutralEval();
   if(!isLegalTolerant(moveLoc,movePla))
     return false;
 

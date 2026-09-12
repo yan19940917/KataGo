@@ -48,6 +48,8 @@ class AsyncBot {
   void setAvoidMoveUntilByLoc(const std::vector<int>& bVec, const std::vector<int>& wVec);
   void setAvoidMoveUntilRescaleRoot(bool b);
   void setAlwaysIncludeOwnerMap(bool b);
+  void setHandicapNeutralEval(const NNOutput* nnOutput);
+  void clearHandicapNeutralEval();
   void setParams(const SearchParams& params);
   void setParamsNoClearing(const SearchParams& params);
   void setExternalPatternBonusTable(std::unique_ptr<PatternBonusTable>&& table);

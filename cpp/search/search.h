@@ -116,6 +116,12 @@ struct Search {
   double mirrorCenterSymmetryError;
 
   bool alwaysIncludeOwnerMap;
+  // A copy of the latest PDA=0 root evaluation supplied by the GTP controller.
+  // This is intentionally owned by the main Search object so it never points
+  // into a temporary probe search.
+  bool handicapNeutralEvalValid;
+  double handicapNeutralScoreMean;
+  float* handicapNeutralOwnerMap;
 
   SearchParams searchParams;
   int64_t numSearchesBegun;
@@ -231,6 +237,8 @@ struct Search {
   void setAvoidMoveUntilByLoc(const std::vector<int>& bVec, const std::vector<int>& wVec);
   void setAvoidMoveUntilRescaleRoot(bool b);
   void setAlwaysIncludeOwnerMap(bool b);
+  void setHandicapNeutralEval(const NNOutput* nnOutput);
+  void clearHandicapNeutralEval();
   void setRootSymmetryPruningOnly(const std::vector<int>& rootPruneOnlySymmetries);
   void setParams(const SearchParams& params);
   void setParamsNoClearing(const SearchParams& params); //Does not clear search

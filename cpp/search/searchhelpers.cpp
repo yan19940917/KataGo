@@ -158,7 +158,11 @@ std::shared_ptr<NNOutput>* Search::maybeAddPolicyNoiseAndTemp(SearchThread& thre
      searchParams.rootPolicyTemperatureEarly == 1.0 &&
      rootHintLoc == Board::NULL_LOC &&
      !avoidMoveUntilRescaleRoot &&
-     !(oldNNOutput != NULL && HandicapSearch::explorationBudget(rootBoard,rootHistory,rootPla,searchParams,*oldNNOutput) > 0.0)
+     !(oldNNOutput != NULL && HandicapSearch::explorationBudget(
+       rootBoard,rootHistory,rootPla,searchParams,*oldNNOutput,
+       handicapNeutralEvalValid ? handicapNeutralScoreMean : NAN,
+       handicapNeutralEvalValid ? handicapNeutralOwnerMap : nullptr
+     ) > 0.0)
   )
     return NULL;
   if(oldNNOutput == NULL)
@@ -210,7 +214,9 @@ std::shared_ptr<NNOutput>* Search::maybeAddPolicyNoiseAndTemp(SearchThread& thre
   // Shape exploration, not the value estimate or final visits. This shared root
   // path is used by AsyncBot/GTP, analysis, and synchronous Search alike.
   HandicapSearch::applyMoyoPolicy(
-    rootBoard,rootHistory,rootPla,rootSafeArea,searchParams,*oldNNOutput,noisedPolicyProbs
+    rootBoard,rootHistory,rootPla,rootSafeArea,searchParams,*oldNNOutput,noisedPolicyProbs,
+    handicapNeutralEvalValid ? handicapNeutralScoreMean : NAN,
+    handicapNeutralEvalValid ? handicapNeutralOwnerMap : nullptr
   );
 
   if(searchParams.rootNoiseEnabled) {

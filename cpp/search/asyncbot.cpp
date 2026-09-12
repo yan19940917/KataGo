@@ -129,6 +129,14 @@ void AsyncBot::setAlwaysIncludeOwnerMap(bool b) {
   stopAndWait();
   search->setAlwaysIncludeOwnerMap(b);
 }
+void AsyncBot::setHandicapNeutralEval(const NNOutput* nnOutput) {
+  stopAndWait();
+  search->setHandicapNeutralEval(nnOutput);
+}
+void AsyncBot::clearHandicapNeutralEval() {
+  stopAndWait();
+  search->clearHandicapNeutralEval();
+}
 void AsyncBot::setParams(const SearchParams& params) {
   stopAndWait();
   search->setParams(params);

@@ -359,6 +359,9 @@ struct GTPEngine {
   NNEvaluator* nnEval;
   NNEvaluator* humanEval;
   AsyncBot* bot;
+  // PDA=0 probe with an independent tree. It shares the evaluator but never
+  // mutates or clears the main bot's search tree.
+  Search* neutralProbeSearch;
   Rules currentRules; //Should always be the same as the rules in bot, if bot is not NULL.
 
   //Stores the params we want to be using during genmoves or analysis
@@ -432,6 +435,7 @@ struct GTPEngine {
      nnEval(NULL),
      humanEval(NULL),
      bot(NULL),
+     neutralProbeSearch(NULL),
      currentRules(initialRules),
      genmoveParams(initialGenmoveParams),
      analysisParams(initialAnalysisParams),
@@ -459,6 +463,7 @@ struct GTPEngine {
   ~GTPEngine() {
     stopAndWait();
     delete bot;
+    delete neutralProbeSearch;
     delete nnEval;
     delete humanEval;
   }
@@ -503,11 +508,13 @@ struct GTPEngine {
         assert(bot != NULL);
         bot->stopAndWait();
         delete bot;
+        delete neutralProbeSearch;
         delete nnEval;
         delete humanEval;
         bot = NULL;
         nnEval = NULL;
         humanEval = NULL;
+        neutralProbeSearch = NULL;
         logger.write("Cleaned up old neural net and bot");
       }
 
@@ -558,6 +565,8 @@ struct GTPEngine {
         assert(bot != NULL);
         bot->stopAndWait();
         delete bot;
+        delete neutralProbeSearch;
+        neutralProbeSearch = NULL;
         bot = NULL;
         logger.write("Cleaned up old bot");
       }
@@ -573,12 +582,22 @@ struct GTPEngine {
         searchRandSeed = Global::uint64ToString(seedRand.nextUInt64());
 
       bot = new AsyncBot(genmoveParams, nnEval, humanEval, &logger, searchRandSeed);
+      SearchParams probeParams = genmoveParams;
+      probeParams.numThreads = std::max(1, std::min(4, probeParams.numThreads));
+      probeParams.maxVisits = pdaProtectProbeVisits;
+      probeParams.maxPlayouts = ((int64_t)1) << 50;
+      probeParams.maxTime = 1.0e20;
+      neutralProbeSearch = new Search(
+        probeParams, nnEval, &logger, searchRandSeed + "-neutral-pda-probe"
+      );
+      neutralProbeSearch->setAlwaysIncludeOwnerMap(true);
       bot->setCopyOfExternalPatternBonusTable(patternBonusTable);
       isGenmoveParams = true;
 
       Board board(boardXSize,boardYSize);
       Player pla = P_BLACK;
       BoardHistory hist(board,pla,currentRules,0,Search::resolveHistoryModes(genmoveParams,nnEval));
+      neutralProbeSearch->setPosition(pla,board,hist);
       vector<Move> newMoveHistory;
       setPositionAndRules(pla,board,hist,board,pla,newMoveHistory);
       clearStatsForNewGame();
@@ -598,6 +617,8 @@ struct GTPEngine {
 
     currentRules = hist.rules;
     bot->setPosition(pla,board,hist);
+    if(neutralProbeSearch != NULL)
+      neutralProbeSearch->setPosition(pla,board,hist);
     initialBoard = newInitialBoard;
     initialPla = newInitialPla;
     moveHistory = newMoveHistory;
@@ -643,6 +664,8 @@ struct GTPEngine {
 
   void updateKomiIfNew(float newKomi) {
     bot->setKomiIfNew(newKomi);
+    if(neutralProbeSearch != NULL)
+      neutralProbeSearch->setKomiIfNew(newKomi);
     currentRules.komi = newKomi;
   }
 
@@ -658,8 +681,11 @@ struct GTPEngine {
   bool play(Loc loc, Player pla) {
     testAssert(bot->getRootHist().rules == currentRules);
     bool suc = bot->makeMove(loc,pla,preventEncore);
-    if(suc)
+    if(suc) {
+      if(neutralProbeSearch != NULL)
+        testAssert(neutralProbeSearch->makeMove(loc,pla,preventEncore));
       moveHistory.emplace_back(loc,pla);
+    }
     return suc;
   }
 
@@ -1242,6 +1268,12 @@ struct GTPEngine {
     if(paramsToUse != bot->getParams())
       bot->setParams(paramsToUse);
 
+    // setParams clears transient neutral data, so install the probe result
+    // only after the final main-search parameters are in place.
+    if(ev.ok && neutralProbeSearch != NULL && neutralProbeSearch->rootNode != NULL)
+      bot->setHandicapNeutralEval(neutralProbeSearch->rootNode->getNNOutput());
+    else
+      bot->clearHandicapNeutralEval();
 
     //Play faster when winning
     double searchFactor = PlayUtils::getSearchFactor(gargs.searchFactorWhenWinningThreshold,gargs.searchFactorWhenWinning,paramsToUse,recentWinLossValues,pla);
@@ -1614,55 +1646,38 @@ struct GTPEngine {
  
  PdaProtectEval computePdaProtectEval(Player pla, int64_t numVisits) {
     PdaProtectEval ev;
-    if(bot == NULL || nnEval == NULL)
+    if(bot == NULL || nnEval == NULL || neutralProbeSearch == NULL)
       return ev;
+    // Stop only the main bot. The probe owns an independent Search tree and
+    // is run synchronously, so probing cannot clear the main tree.
     bot->stopAndWait();
- 
-    //1) 无偏参数：PDA=0、关 human SL/反镜像/模式规避，并把搜索量限制为探针预算
-    {
-      SearchParams tmpParams = genmoveParams;
-      tmpParams.playoutDoublingAdvantage = 0.0;
-      // Keep PDA-neutral auxiliary searches free of custom moyo exploration.
-      tmpParams.complexityBonus = 0.0;
-      tmpParams.playoutDoublingAdvantagePla = C_EMPTY;
-      tmpParams.conservativePass = true;
-      tmpParams.humanSLChosenMoveProp = 0.0;
-      tmpParams.humanSLRootExploreProbWeightful = 0.0;
-      tmpParams.humanSLRootExploreProbWeightless = 0.0;
-      tmpParams.humanSLPlaExploreProbWeightful = 0.0;
-      tmpParams.humanSLPlaExploreProbWeightless = 0.0;
-      tmpParams.humanSLOppExploreProbWeightful = 0.0;
-      tmpParams.humanSLOppExploreProbWeightless = 0.0;
-      tmpParams.antiMirror = false;
-      tmpParams.avoidRepeatedPatternUtility = 0;
-      tmpParams.maxVisits = numVisits;                 // 探针预算
-      tmpParams.maxPlayouts = ((int64_t)1) << 50;
-      tmpParams.maxTime = 1.0e20;
-      bot->setParams(tmpParams);
-    }
- 
-    //2) 保存 bot 状态
-    const Player oldPla = bot->getRootPla();
-    const Board oldBoard = bot->getRootBoard();
-    const BoardHistory oldHist = bot->getRootHist();
- 
-    //3) 用无偏参数同步跑一次小搜索，结果留在 bot 的搜索树里
-   {
-      TimeControls noTc;                  // 无限时间，靠 maxVisits 停
-      int expectedSearchId = (genmoveExpectedId.load() + 1) & 0x3FFFFFFF;
-      genmoveExpectedId.store(expectedSearchId);
-      auto onMove = [](Loc moveLoc, int searchId, Search* search) {
-        (void)moveLoc;
-        (void)searchId;
-        (void)search;
-      };
-      bot->genMoveAsync(pla, expectedSearchId, noTc, 1.0, onMove);
-      bot->waitForSearchToEnd();
-    }
- 
-    //4) 读探针根值（KataGo 上报的本来就是白方视角）
+
+    SearchParams tmpParams = genmoveParams;
+    tmpParams.playoutDoublingAdvantage = 0.0;
+    tmpParams.playoutDoublingAdvantagePla = C_EMPTY;
+    tmpParams.complexityBonus = 0.0;
+    tmpParams.complexityMaxBonus = 0.0;
+    tmpParams.conservativePass = true;
+    tmpParams.humanSLChosenMoveProp = 0.0;
+    tmpParams.humanSLRootExploreProbWeightful = 0.0;
+    tmpParams.humanSLRootExploreProbWeightless = 0.0;
+    tmpParams.humanSLPlaExploreProbWeightful = 0.0;
+    tmpParams.humanSLPlaExploreProbWeightless = 0.0;
+    tmpParams.humanSLOppExploreProbWeightful = 0.0;
+    tmpParams.humanSLOppExploreProbWeightless = 0.0;
+    tmpParams.antiMirror = false;
+    tmpParams.avoidRepeatedPatternUtility = 0.0;
+    tmpParams.maxVisits = numVisits;
+    tmpParams.maxPlayouts = ((int64_t)1) << 50;
+    tmpParams.maxTime = 1.0e20;
+    neutralProbeSearch->setParams(tmpParams);
+    neutralProbeSearch->setPosition(pla,bot->getRootBoard(),bot->getRootHist());
+    neutralProbeSearch->runWholeSearch(pla);
+
+    // Read the neutral root values (white perspective). The owner map is
+    // copied into the main Search only after its final parameters are applied.
     try {
-      ReportedSearchValues values = bot->getSearchStopAndWait()->getRootValuesRequireSuccess();
+      ReportedSearchValues values = neutralProbeSearch->getRootValuesRequireSuccess();
       ev.evenWinrate = 0.5 * (1.0 + values.winLossValue);
       ev.evenScoreLead = values.lead;
       ev.evenScoreStdev = values.expectedScoreStdev;
@@ -1670,12 +1685,8 @@ struct GTPEngine {
     }
     catch(...) {
       ev.ok = false;
+      bot->clearHandicapNeutralEval();
     }
- 
-    //5) 恢复
-    bot->setPosition(oldPla,oldBoard,oldHist);
-    bot->setParams(genmoveParams);
-    isGenmoveParams = true;
     return ev;
   }
 
